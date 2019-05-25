@@ -1,26 +1,21 @@
-# Vault Auto Unseal Feature using AWS KMS Setup
-This repo has a vagrant file to create an enterprise Vault Cluster with Consul backend.  
-Seal stanza is added to the Vault config file to setup auto unseal using AWS KMS.
-Vagrant file also creates a secondary cluster with auto unseal with AWS KMS using a different KMS ring.  This secondary can be configured as a DR or Performance Replication to perform further tests.
+# Vault Consul HA Single Cluster
+This repo has a vagrant file to create an enterprise (or OSS) Vault Cluster with Consul backend.  
 
-Each cluster contains 2 nodes and each note consists of a Consul Server and Vault server.  
+Cluster contains 2 nodes and each note consists of a Consul Server and Vault server.  
 The configuration is used for learning purposes.  This is NOT following the reference architecture for Vault and should not be used for a Production setup.
 
 ```
-Cluster 1: Vault Primary cluster in DC1 
-
-Cluster 2: Vault Secondary cluster in DC2 
-
+Cluster : Vault Primary cluster in DC1 
 ```
 
 All servers are set without TLS.
 
 ## Pre-Requisites
-Create a folder named as ```ent``` and copy both the Consul and Vault enterprise binary zip files
+Create a folder named as ```ent``` and copy both the Consul and Vault enterprise binary zip files.  
 
 ```e.g., consul-enterprise_1.4.5+prem_linux_amd64.zip```
 
-Rename ```data.txt.example``` to ```data.txt``` and update the values to specify the AWS related information such as Region, Access Key, Secret Key and AWS KMD Id.
+If using OSS binary zip file the make appropriate changes to the Vault and Consul setup shell scripts in the ```scripts``` folder.
 
 ## Vault Primary Cluster
 2 node cluster is created with each node containing Vault and Consul servers. The server details are shown below
@@ -31,16 +26,6 @@ vault2   10.100.1.12
 ```
 
 One of the Consul servers would become the leader.  Similarly one of Vault servers would become the Active node and the other node acts as Read Replica.
-
-## Vault Secondary Cluster
-2 node cluster is created with each node containing Vault and Consul servers. The server details are shown below
-
-```
-vault-dr1   10.100.2.11
-vault-dr2   10.100.2.12
-```
-
-The vagrant file also has commented section to create another secondary cluster if required.  Check the content of the Vagrant file.
 
 ## Usage
 If the ubuntu box is not available then it will take sometime to download the base box for the first time.  After the initial download, servers can be destroyed and recreated quickly with Vagrant
@@ -71,19 +56,18 @@ v2    b3100f83-a4d1-89fd-5ab3-d96951e6a342  10.100.1.12:8300  follower  true   3
 
 vagrant@v1: $consul info
 
-vagrant@v1: $vault status
-
-Key                      Value
----                      -----
-Recovery Seal Type       awskms
-Initialized              false
-Sealed                   true
-Total Recovery Shares    0
-Threshold                0
-Unseal Progress          0/0
-Unseal Nonce             n/a
-Version                  n/a
-HA Enabled               true
+vagrant@v1:~$ vault status
+Key                Value
+---                -----
+Seal Type          shamir
+Initialized        true
+Sealed             true
+Total Shares       1
+Threshold          1
+Unseal Progress    0/1
+Unseal Nonce       n/a
+Version            1.1.2+prem
+HA Enabled         true
 
 ```
 
@@ -93,127 +77,88 @@ Vault status would be shown as uninitialised and sealed.  By default the Recover
 
 ## Initialising and Unsealing Vault
 
-Perform the following to initialise the Vault cluster and this should unseal both vault nodes due to ```awskms``` stanza.  
+Perform the following to initialise and unseal the Vault cluster.
 Initialisation is only required at one of the servers.
 
-Vault can be initialised with Recovery keys.  In this case, the Recovery Seal Type would be set to ```Shamir```
-If no recovery keys are requested then Recovery Seal Type would remain as ```awskms```
-Having Recovery Keys would be useful as a last resort in case ```aws kms``` is accidently removed.
+Vault is initialised with unseal keys.  
 
 ```
 $vagrant ssh vault1
 
 vagrant@v1: $vault status
 
-vagrant@v1: $vault operator init -recovery-shares=1 recovery-threshold=1
-Recovery Key 1: uf2dgR88QOHSSnnIDbSmGSNp1VJ+nIrdFlI0ZcebW80=
+vagrant@v1:~$ vault operator init -key-shares=1 -key-threshold=1 > keys.txt
+Unseal Key 1: JVlj1SkQF6F3+35mvu8HyeukOyYxptK5/1lCv2OgUiM=
 
-Initial Root Token: s.tlaekTPlcIytjcUWDGSEuqOh
+Initial Root Token: s.scWMexn7hrCoAxIF54KBleEj
 
-Success! Vault is initialized
+Vault initialized with 1 key shares and a key threshold of 1. Please securely
+distribute the key shares printed above. When the Vault is re-sealed,
+restarted, or stopped, you must supply at least 1 of these keys to unseal it
+before it can start servicing requests.
 
-Recovery key initialized with 1 key shares and a key threshold of 1. Please
-securely distribute the key shares printed above.
+Vault does not store the generated master key. Without at least 1 key to
+reconstruct the master key, Vault will remain permanently sealed!
 
-vagrant@v1: $vault status
+It is possible to generate new unseal keys, provided you have a quorum of
+existing unseal keys shares. See "vault operator rekey" for more information.
 
-Key                      Value
----                      -----
-Recovery Seal Type       shamir
-Initialized              true
-Sealed                   false
-Total Recovery Shares    1
-Threshold                1
-Version                  1.1.2+prem
-Cluster Name             vault-cluster-4ec938e4
-Cluster ID               f395a1d9-fa91-4782-7aad-b7ea2a0b6af0
-HA Enabled               true
-HA Cluster               https://10.100.1.11:8201
-HA Mode                  active
-Last WAL                 16
+vagrant@v1:~$ vault status
+Key                Value
+---                -----
+Seal Type          shamir
+Initialized        true
+Sealed             true
+Total Shares       1
+Threshold          1
+Unseal Progress    0/1
+Unseal Nonce       n/a
+Version            1.1.2+prem
+HA Enabled         true
+
+vagrant@v1:~$ vault operator init
+
+vagrant@v1:~$ vault operator unseal
+Unseal Key (will be hidden):
+Key                    Value
+---                    -----
+Seal Type              shamir
+Initialized            true
+Sealed                 false
+Total Shares           1
+Threshold              1
+Version                1.1.2+prem
+Cluster Name           vault-cluster-daba87a2
+Cluster ID             8d3e8616-8b28-a7fb-93e1-126810b27f2e
+HA Enabled             true
+HA Cluster             n/a
+HA Mode                standby
+Active Node Address    <none>
+
+vagrant@v1:~$ vault status
+Key             Value
+---             -----
+Seal Type       shamir
+Initialized     true
+Sealed          false
+Total Shares    1
+Threshold       1
+Version         1.1.2+prem
+Cluster Name    vault-cluster-daba87a2
+Cluster ID      8d3e8616-8b28-a7fb-93e1-126810b27f2e
+HA Enabled      true
+HA Cluster      https://10.100.1.11:8201
+HA Mode         active
+Last WAL        16
 
 vagrant@v1: $exit
 
 $vagrant ssh vault2
 
+vagrant@v2: $ vault operator unseal
 vagrant@v2: $ vault status
 
 ```
-
-## Testing Auto Unseal Feature
-
-Once the Vault is initialised, it would be unsealed by the use of AWS KMS.   This is verified in the previous step.
-
-When Vault is restarted, it would automatically unseal using AWS KMS.
-
-```
-vagrant@v1: $ sudo systemctl restart vault
-vagrant@v1: $ sudo systemctl status vault
-
-vault.service - "Vault secret management tool"
-   Loaded: loaded (/etc/systemd/system/vault.service; enabled; vendor preset: enabled)
-   Active: active (running) since Mon 2019-05-20 07:45:16 UTC; 6s ago
- Main PID: 2679 (vault)
-    Tasks: 11 (limit: 1152)
-   CGroup: /system.slice/vault.service
-           └─2679 /usr/local/bin/vault server -config=/etc/vault/vault.hcl
-
-May 20 07:45:19 v1 vault[2679]: 2019-05-20T07:45:19.817Z [INFO]  core: successfully mounted backend: type=identity path=identity/
-May 20 07:45:19 v1 vault[2679]: 2019-05-20T07:45:19.817Z [INFO]  core: successfully mounted backend: type=cubbyhole path=cubbyhole/
-May 20 07:45:19 v1 vault[2679]: 2019-05-20T07:45:19.825Z [INFO]  core: successfully enabled credential backend: type=token path=token/
-May 20 07:45:19 v1 vault[2679]: 2019-05-20T07:45:19.825Z [INFO]  core: restoring leases
-May 20 07:45:19 v1 vault[2679]: 2019-05-20T07:45:19.827Z [INFO]  expiration: lease restore complete
-May 20 07:45:19 v1 vault[2679]: 2019-05-20T07:45:19.828Z [INFO]  identity: entities restored
-May 20 07:45:19 v1 vault[2679]: 2019-05-20T07:45:19.828Z [INFO]  identity: groups restored
-May 20 07:45:19 v1 vault[2679]: 2019-05-20T07:45:19.829Z [INFO]  mfa: configurations restored
-May 20 07:45:19 v1 vault[2679]: 2019-05-20T07:45:19.830Z [INFO]  core: post-unseal setup complete
-May 20 07:45:19 v1 vault[2679]: 2019-05-20T07:45:19.830Z [INFO]  replication.standby: requesting WAL stream: guard=dc8b0700
-
-
-
-vagrant@v1: $ vault status
-
-Key                                    Value
----                                    -----
-Recovery Seal Type                     shamir
-Initialized                            true
-Sealed                                 false
-Total Recovery Shares                  1
-Threshold                              1
-Version                                1.1.2+prem
-Cluster Name                           vault-cluster-4ec938e4
-Cluster ID                             f395a1d9-fa91-4782-7aad-b7ea2a0b6af0
-HA Enabled                             true
-HA Cluster                             https://10.100.1.12:8201
-HA Mode                                standby
-Active Node Address                    http://10.100.1.12:8200
-Performance Standby Node               true
-Performance Standby Last Remote WAL    0
-
-
-vagrant@v1: $exit
-
-$vagrant ssh vault2
-
-vagrant@v2:~$ vault status
-Key                      Value
----                      -----
-Recovery Seal Type       shamir
-Initialized              true
-Sealed                   false
-Total Recovery Shares    1
-Threshold                1
-Version                  1.1.2+prem
-Cluster Name             vault-cluster-4ec938e4
-Cluster ID               f395a1d9-fa91-4782-7aad-b7ea2a0b6af0
-HA Enabled               true
-HA Cluster               https://10.100.1.12:8201
-HA Mode                  active
-Last WAL                 17
-
-```
-
-In the above, it should be noted that Node 1 has now become the Standby.  When Node 1 was restarted, Node 2 became the leader.
 
 ## Accessing UI
 
@@ -223,4 +168,7 @@ e.g., Consul UI http://10.100.1.11:8500
 
 e.g., Vault UI http://10.100.2.11:8500 
 
+## Clean Up
+
+Use ```vagrant destroy``` and answer ```Y``` to destroy each VM machine
 
